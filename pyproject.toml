@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "potsnitch"
+version = "0.1.0"
+description = "Low-interaction honeypot detection tool for defensive validation"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "f0rw4rd"}
+]
+keywords = ["honeypot", "security", "detection", "fingerprinting", "defensive"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = [
+    "paramiko>=3.0.0",
+    "impacket>=0.10.0",
+    "pymodbus>=3.0.0",
+    "requests>=2.28.0",
+    "scapy>=2.5.0",
+    "cryptography>=40.0.0",
+    "rich>=13.0.0",
+    "click>=8.0.0",
+]
+
+[project.optional-dependencies]
+ics = ["python-snap7>=1.3"]
+dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "black", "ruff"]
+
+[project.scripts]
+potsnitch = "potsnitch.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/f0rw4rd/potsnitch"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["potsnitch*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]

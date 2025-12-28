@@ -1,0 +1,317 @@
+version: '3.8'
+
+# PotSnitch Test Suite - Honeypot Fleet
+# Start with: docker-compose up -d
+# Stop with: docker-compose down
+
+services:
+  # ============================================
+  # SSH Honeypots
+  # ============================================
+
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: potsnitch-cowrie
+    ports:
+      - "2222:2222"   # SSH
+      - "2223:2223"   # Telnet
+    environment:
+      - COWRIE_TELNET_ENABLED=yes
+    volumes:
+      - cowrie-logs:/home/cowrie/cowrie/var/log/cowrie
+      - cowrie-downloads:/home/cowrie/cowrie/var/lib/cowrie/downloads
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  endlessh:
+    image: linuxserver/endlessh:latest
+    container_name: potsnitch-endlessh
+    ports:
+      - "2224:22"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - MSDELAY=1000
+      - MAXLINES=32
+      - MAXCLIENTS=4096
+      - LOGFILE=true
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # Database Honeypots
+  # ============================================
+
+  elasticpot:
+    image: bontchev/elasticpot:latest
+    container_name: potsnitch-elasticpot
+    ports:
+      - "9201:9200"
+    volumes:
+      - elasticpot-logs:/opt/elasticpot/log
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  redis-honeypot:
+    image: cypwnpwnsocute/redishoneypot:latest
+    container_name: potsnitch-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 6379 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # ICS/SCADA Honeypots
+  # ============================================
+
+  conpot:
+    image: honeynet/conpot:latest
+    container_name: potsnitch-conpot
+    ports:
+      - "10080:80"      # HTTP
+      - "10102:102"     # S7Comm
+      - "10502:502"     # Modbus
+      - "10161:161/udp" # SNMP
+    command: ["--template", "default"]
+    volumes:
+      - conpot-logs:/var/log/conpot
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 502 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # Web Honeypots
+  # ============================================
+
+  hellpot:
+    image: yunginnanet/hellpot:latest
+    container_name: potsnitch-hellpot
+    ports:
+      - "8081:8080"
+    environment:
+      - HELLPOT_LOGGER_DEBUG=true
+      - HELLPOT_HTTP_BIND_ADDR=0.0.0.0
+      - HELLPOT_HTTP_BIND_PORT=8080
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # Multi-Service Honeypots
+  # ============================================
+
+  dionaea:
+    image: dinotools/dionaea:latest
+    container_name: potsnitch-dionaea
+    ports:
+      - "2121:21"       # FTP
+      - "4080:80"       # HTTP
+      - "4443:443"      # HTTPS
+      - "4445:445"      # SMB
+      - "11433:1433"    # MSSQL
+      - "13306:3306"    # MySQL
+      - "15060:5060"    # SIP
+      - "15060:5060/udp"
+    volumes:
+      - dionaea-logs:/opt/dionaea/var/log
+      - dionaea-binaries:/opt/dionaea/var/lib/dionaea/binaries
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # Email Honeypots
+  # ============================================
+
+  mailoney:
+    image: phin3has/mailoney:latest
+    container_name: potsnitch-mailoney
+    ports:
+      - "2525:25"
+    command: ["-s", "mail.honeypot.local", "-t", "schizo_open_relay", "-p", "25"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 25 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # Telnet Honeypots
+  # ============================================
+
+  # Cowrie also provides telnet on 2223
+
+  # ============================================
+  # Additional Database Honeypots
+  # ============================================
+
+  # MongoDB Honeypot
+  mongodb-honeypot:
+    image: qeeqbox/honeypots:latest
+    container_name: potsnitch-mongodb
+    ports:
+      - "27018:27017"
+    environment:
+      - honeypots=mongodb
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 27017 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # PostgreSQL Honeypot
+  postgres-honeypot:
+    image: qeeqbox/honeypots:latest
+    container_name: potsnitch-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      - honeypots=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 5432 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # FTP Honeypots
+  # ============================================
+
+  # Additional FTP honeypot (Dionaea has FTP on 2121)
+  ftp-honeypot:
+    image: qeeqbox/honeypots:latest
+    container_name: potsnitch-ftp
+    ports:
+      - "2120:21"
+    environment:
+      - honeypots=ftp
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 21 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # VNC Honeypots
+  # ============================================
+
+  vnc-honeypot:
+    image: qeeqbox/honeypots:latest
+    container_name: potsnitch-vnc
+    ports:
+      - "5901:5900"
+    environment:
+      - honeypots=vnc
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 5900 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # RDP Honeypots
+  # ============================================
+
+  rdp-honeypot:
+    image: qeeqbox/honeypots:latest
+    container_name: potsnitch-rdp
+    ports:
+      - "3390:3389"
+    environment:
+      - honeypots=rdp
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 3389 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+  # ============================================
+  # Additional SMTP Honeypots
+  # ============================================
+
+  smtp-honeypot:
+    image: qeeqbox/honeypots:latest
+    container_name: potsnitch-smtp
+    ports:
+      - "2526:25"
+      - "5870:587"
+    environment:
+      - honeypots=smtp
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 25 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
+volumes:
+  cowrie-logs:
+  cowrie-downloads:
+  elasticpot-logs:
+  conpot-logs:
+  dionaea-logs:
+  dionaea-binaries:
+
+networks:
+  honeypot-net:
+    name: potsnitch-test-network
+    driver: bridge
