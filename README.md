@@ -71,6 +71,12 @@ potsnitch validate cowrie 192.168.1.100
 pytest tests/unit/ --cov=potsnitch
 ```
 
+## Support
+
+If you find this project useful, consider supporting development:
+
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/f0rw4rd)
+
 ## License
 
 MIT
