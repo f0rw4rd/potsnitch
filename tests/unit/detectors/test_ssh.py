@@ -185,6 +185,114 @@ class TestSSHDetectorKEXDetection:
         assert "encryption_client_to_server" in result
 
 
+class TestSSHDetectorHASSH:
+    """Tests for HASSHServer fingerprinting and SSHesame banner detection.
+
+    These exercise pure parsing/hashing logic (no network), with ground-truth
+    values captured from real honeypot containers. The live behaviour is
+    additionally verified in tests/integration/test_ssh_detection.py.
+    """
+
+    @pytest.fixture
+    def detector(self):
+        return SSHDetector()
+
+    def _kex_info(self, kex, enc_s2c, mac_s2c, comp_s2c):
+        return {
+            "kex_algorithms": kex,
+            "encryption_server_to_client": enc_s2c,
+            "mac_server_to_client": mac_s2c,
+            "compression_server_to_client": comp_s2c,
+        }
+
+    def test_hassh_matches_captured_cowrie(self, detector):
+        """Cowrie's real KEXINIT hashes to its captured HASSHServer."""
+        from potsnitch.detectors.ssh import HASSH_SERVER_FINGERPRINTS
+
+        kex_info = self._kex_info(
+            b"curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,"
+            b"ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha1,ext-info-s",
+            b"aes128-ctr,aes192-ctr,aes256-ctr,aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc,cast128-cbc",
+            b"hmac-sha2-512,hmac-sha2-384,hmac-sha2-256,hmac-sha1,hmac-md5",
+            b"zlib@openssh.com,zlib,none",
+        )
+        hassh = detector._compute_hassh_server(kex_info)
+        assert hassh == "92585b26f6634475d2d35bddbcdd1917"
+        assert "cowrie" in HASSH_SERVER_FINGERPRINTS[hassh]["honeypots"]
+
+    def test_hassh_none_when_fields_missing(self, detector):
+        """HASSH computation returns None if the KEXINIT is incomplete."""
+        assert detector._compute_hassh_server({"kex_algorithms": b"foo"}) is None
+
+    def test_check_kex_flags_known_hassh(self, detector):
+        """A known honeypot HASSHServer raises a high-severity indicator."""
+        from potsnitch.core.result import DetectionResult
+
+        result = DetectionResult(target="10.0.0.1", port=22)
+        kex_info = self._kex_info(
+            b"curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,"
+            b"ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha1,ext-info-s",
+            b"aes128-ctr,aes192-ctr,aes256-ctr,aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc,cast128-cbc",
+            b"hmac-sha2-512,hmac-sha2-384,hmac-sha2-256,hmac-sha1,hmac-md5",
+            b"zlib@openssh.com,zlib,none",
+        )
+        detector._check_kex(kex_info, result)
+        assert any(i.name == "hassh_server_match" for i in result.indicators)
+        assert result.honeypot_type == "cowrie"
+
+    def test_check_kex_no_indicator_for_unknown_server(self, detector):
+        """A real (non-honeypot) HASSHServer produces no HASSH indicator."""
+        from potsnitch.core.result import DetectionResult
+
+        result = DetectionResult(target="10.0.0.1", port=22)
+        # An arbitrary modern OpenSSH-like KEXINIT not in the fingerprint table.
+        kex_info = self._kex_info(
+            b"sntrup761x25519-sha512@openssh.com,curve25519-sha256",
+            b"chacha20-poly1305@openssh.com,aes256-gcm@openssh.com",
+            b"umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com",
+            b"none,zlib@openssh.com",
+        )
+        detector._check_kex(kex_info, result)
+        assert not any(i.name == "hassh_server_match" for i in result.indicators)
+
+    def test_sshesame_banner_definite(self, detector):
+        """The SSHesame default banner is a definite indicator."""
+        from potsnitch.core.result import DetectionResult
+
+        result = DetectionResult(target="10.0.0.1", port=22)
+        detector._check_banner("SSH-2.0-sshesame", result)
+        sshesame = [i for i in result.indicators if i.name == "sshesame_banner"]
+        assert sshesame and sshesame[0].severity == Confidence.DEFINITE
+        assert result.honeypot_type == "sshesame"
+
+    def test_go_default_banner_low(self, detector):
+        """Bare Go crypto/ssh banner is only a weak hint."""
+        from potsnitch.core.result import DetectionResult
+
+        result = DetectionResult(target="10.0.0.1", port=22)
+        detector._check_banner("SSH-2.0-Go", result)
+        go = [i for i in result.indicators if i.name == "go_default_banner"]
+        assert go and go[0].severity == Confidence.LOW
+
+    def test_kippo_banner_labeled_kippo(self, detector):
+        """Kippo's default banner is labelled as kippo, not cowrie."""
+        from potsnitch.core.result import DetectionResult
+
+        result = DetectionResult(target="10.0.0.1", port=22)
+        detector._check_banner("SSH-2.0-OpenSSH_5.1p1 Debian-5", result)
+        assert any(i.name == "default_banner" for i in result.indicators)
+        assert result.honeypot_type == "kippo"
+
+    def test_cowrie_banner_labeled_cowrie(self, detector):
+        """A Cowrie default banner does not get the kippo label."""
+        from potsnitch.core.result import DetectionResult
+
+        result = DetectionResult(target="10.0.0.1", port=22)
+        detector._check_banner("SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3", result)
+        assert any(i.name == "default_banner" for i in result.indicators)
+        assert result.honeypot_type != "kippo"
+
+
 class TestSSHDetectorCRProbe:
     """Tests for Kippo carriage return probe."""
 

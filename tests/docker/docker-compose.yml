@@ -29,6 +29,20 @@ services:
     networks:
       - honeypot-net
 
+  sshesame:
+    image: ghcr.io/jaksi/sshesame:latest
+    container_name: potsnitch-sshesame
+    ports:
+      - "2225:2022"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2022 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - honeypot-net
+
   endlessh:
     image: linuxserver/endlessh:latest
     container_name: potsnitch-endlessh
@@ -55,12 +69,11 @@ services:
   # ============================================
 
   elasticpot:
-    image: bontchev/elasticpot:latest
+    # Maintained T-Pot image (bontchev/elasticpot is no longer on Docker Hub).
+    image: dtagdevsec/elasticpot:24.04.1
     container_name: potsnitch-elasticpot
     ports:
       - "9201:9200"
-    volumes:
-      - elasticpot-logs:/opt/elasticpot/log
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/ || exit 1"]
       interval: 10s
@@ -71,10 +84,14 @@ services:
       - honeypot-net
 
   redis-honeypot:
-    image: cypwnpwnsocute/redishoneypot:latest
+    # Maintained T-Pot image (cypwnpwnsocute/redishoneypot is gone). It writes
+    # to /var/log/redishoneypot, so back that path with a tmpfs.
+    image: dtagdevsec/redishoneypot:24.04.1
     container_name: potsnitch-redis
     ports:
       - "6380:6379"
+    tmpfs:
+      - /var/log/redishoneypot
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 6379 || exit 1"]
       interval: 10s
@@ -96,7 +113,8 @@ services:
       - "10102:102"     # S7Comm
       - "10502:502"     # Modbus
       - "10161:161/udp" # SNMP
-    command: ["--template", "default"]
+    # The image's default CMD already runs `conpot --template default`; an
+    # entrypoint-less `command:` override would exec "--template" as a binary.
     volumes:
       - conpot-logs:/var/log/conpot
     healthcheck:
@@ -163,11 +181,12 @@ services:
   # ============================================
 
   mailoney:
-    image: phin3has/mailoney:latest
+    # Maintained T-Pot image (phin3has/mailoney is gone). It ships preconfigured
+    # as a schizo_open_relay, so the phin3has-specific command args are dropped.
+    image: dtagdevsec/mailoney:24.04.1
     container_name: potsnitch-mailoney
     ports:
       - "2525:25"
-    command: ["-s", "mail.honeypot.local", "-t", "schizo_open_relay", "-p", "25"]
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 25 || exit 1"]
       interval: 10s
@@ -184,129 +203,21 @@ services:
   # Cowrie also provides telnet on 2223
 
   # ============================================
-  # Additional Database Honeypots
+  # qeeqbox/honeypots services (DISABLED)
   # ============================================
-
-  # MongoDB Honeypot
-  mongodb-honeypot:
-    image: qeeqbox/honeypots:latest
-    container_name: potsnitch-mongodb
-    ports:
-      - "27018:27017"
-    environment:
-      - honeypots=mongodb
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 27017 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - honeypot-net
-
-  # PostgreSQL Honeypot
-  postgres-honeypot:
-    image: qeeqbox/honeypots:latest
-    container_name: potsnitch-postgres
-    ports:
-      - "5433:5432"
-    environment:
-      - honeypots=postgres
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 5432 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - honeypot-net
-
-  # ============================================
-  # FTP Honeypots
-  # ============================================
-
-  # Additional FTP honeypot (Dionaea has FTP on 2121)
-  ftp-honeypot:
-    image: qeeqbox/honeypots:latest
-    container_name: potsnitch-ftp
-    ports:
-      - "2120:21"
-    environment:
-      - honeypots=ftp
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 21 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - honeypot-net
-
-  # ============================================
-  # VNC Honeypots
-  # ============================================
-
-  vnc-honeypot:
-    image: qeeqbox/honeypots:latest
-    container_name: potsnitch-vnc
-    ports:
-      - "5901:5900"
-    environment:
-      - honeypots=vnc
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 5900 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - honeypot-net
-
-  # ============================================
-  # RDP Honeypots
-  # ============================================
-
-  rdp-honeypot:
-    image: qeeqbox/honeypots:latest
-    container_name: potsnitch-rdp
-    ports:
-      - "3390:3389"
-    environment:
-      - honeypots=rdp
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 3389 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - honeypot-net
-
-  # ============================================
-  # Additional SMTP Honeypots
-  # ============================================
-
-  smtp-honeypot:
-    image: qeeqbox/honeypots:latest
-    container_name: potsnitch-smtp
-    ports:
-      - "2526:25"
-      - "5870:587"
-    environment:
-      - honeypots=smtp
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 25 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - honeypot-net
+  # The `qeeqbox/honeypots` image these used (mongodb 27018, postgres 5433,
+  # ftp 2120, vnc 5901, rdp 3390, smtp 2526/5870) has been removed from Docker
+  # Hub - `docker pull qeeqbox/honeypots` returns "repository does not exist".
+  # A dead image ref aborts the whole `docker compose up`, so these are left
+  # commented out until a maintained multi-protocol replacement is chosen.
+  # None are referenced by tests/integration (ServiceEndpoints has no entries
+  # for them). The mongodb/mysql/postgres/ftp/vnc/rdp/smtp detectors are still
+  # covered: db detectors via Dionaea (mysql/mssql) and unit tests; smtp via the
+  # mailoney service above.
 
 volumes:
   cowrie-logs:
   cowrie-downloads:
-  elasticpot-logs:
   conpot-logs:
   dionaea-logs:
   dionaea-binaries:

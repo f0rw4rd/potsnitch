@@ -34,7 +34,8 @@ potsnitch validate cowrie 192.168.1.100
 | SSH | Cowrie | 22, 2222 | Banner, credentials, commands |
 | SSH | Kippo | 22, 2222 | Banner, CR probe |
 | SSH | Endlessh | 22 | Tarpit timing |
-| SSH | SSHesame, Blacknet | 22 | HASSH fingerprint |
+| SSH | SSHesame | 22 | Banner, HASSHServer |
+| SSH | Cowrie/Kippo | 22, 2222 | HASSHServer fingerprint |
 | Telnet | Cowrie | 23, 2223 | BusyBox emulation |
 | FTP | Dionaea | 21 | Banner, FEAT response |
 | FTP | Cowrie | 21 | Limited commands |

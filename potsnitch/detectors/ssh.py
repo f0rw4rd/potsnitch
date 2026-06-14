@@ -8,6 +8,7 @@ Detection is split into:
 
 import socket
 import struct
+import hashlib
 from typing import Optional, List
 
 try:
@@ -51,6 +52,13 @@ COWRIE_DEFAULT_BANNERS = [
     "SSH-2.0-OpenSSH_5.8p2_hpn13v11 FreeBSD-20110503",
     "SSH-2.0-OpenSSH_5.9p1 Debian-5ubuntu1",
     "SSH-2.0-OpenSSH_5.9",
+]
+
+# Banners that are specifically Kippo (not Cowrie) defaults. Used to label the
+# honeypot type accurately - Kippo's default is OpenSSH_5.1p1 Debian-5, and unlike
+# Cowrie it withholds its KEXINIT on a lightweight probe so banner is the signal.
+KIPPO_DEFAULT_BANNERS = [
+    "SSH-2.0-OpenSSH_5.1p1 Debian-5",
 ]
 
 # Cowrie/Kippo default hostnames across versions
@@ -109,6 +117,28 @@ COWRIE_CIPHERS = [
 COWRIE_DEFAULT_UNAME = "Linux srv04 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux"
 
 
+# Known HASSHServer fingerprints (md5 of "kex;enc_s2c;mac_s2c;comp_s2c" from the
+# server's SSH_MSG_KEXINIT). These were captured from real honeypot containers
+# (see tests/integration/test_ssh_detection.py) rather than guessed.
+#
+# HASSH is valuable because it fingerprints the underlying SSH *library*, which
+# operators rarely customise - so a honeypot is still caught even when its banner
+# is changed. Library HASSH (e.g. Go crypto/ssh) can shift between releases, so
+# banner/cipher signals should corroborate where possible.
+HASSH_SERVER_FINGERPRINTS = {
+    # Cowrie default config (emulated OpenSSH 9.2p1, Twisted Conch backend).
+    "92585b26f6634475d2d35bddbcdd1917": {
+        "library": "Cowrie (default config)",
+        "honeypots": ["cowrie"],
+    },
+    # sshesame (Go crypto/ssh). Build-dependent - corroborate with banner.
+    "41a85c886a9e9b845f0e69d68994492a": {
+        "library": "sshesame (Go crypto/ssh)",
+        "honeypots": ["sshesame"],
+    },
+}
+
+
 @register_detector
 class SSHDetector(BaseDetector):
     """Detector for SSH-based honeypots (Cowrie, Kippo).
@@ -126,8 +156,8 @@ class SSHDetector(BaseDetector):
     """
 
     name = "ssh"
-    description = "Detects Cowrie and Kippo SSH honeypots"
-    honeypot_types = ["cowrie", "kippo"]
+    description = "Detects Cowrie, Kippo, and SSHesame SSH honeypots"
+    honeypot_types = ["cowrie", "kippo", "sshesame", "blacknet", "kojoney"]
     default_ports = [22, 2222]
 
     def detect_passive(self, target: str, port: int) -> DetectionResult:
@@ -265,17 +295,53 @@ class SSHDetector(BaseDetector):
 
     def _check_banner(self, banner: str, result: DetectionResult) -> None:
         """Check SSH banner for honeypot indicators."""
+        banner_lower = banner.lower()
+
+        # SSHesame ships with the default version string "SSH-2.0-sshesame".
+        # This is a conclusive signature for the honeypot.
+        if "sshesame" in banner_lower:
+            result.add_indicator(
+                Indicator(
+                    name="sshesame_banner",
+                    description="SSHesame default banner detected",
+                    severity=Confidence.DEFINITE,
+                    details=f"Banner: {banner}",
+                )
+            )
+            result.honeypot_type = "sshesame"
+            return
+
+        # Bare "SSH-2.0-Go" is the unconfigured Go crypto/ssh default version.
+        # Legitimate Go SSH servers usually override it, so this is only a weak
+        # hint (sshesame/fapro and similar Go honeypots may expose it).
+        if banner in ("SSH-2.0-Go", "SSH-2.0-Go\r\n".strip()):
+            result.add_indicator(
+                Indicator(
+                    name="go_default_banner",
+                    description="Default Go crypto/ssh banner (common in Go honeypots)",
+                    severity=Confidence.LOW,
+                    details=f"Banner: {banner}",
+                )
+            )
+
         # Check for exact default banners
         for default in COWRIE_DEFAULT_BANNERS:
             if banner == default:
+                is_kippo = banner in KIPPO_DEFAULT_BANNERS
                 result.add_indicator(
                     Indicator(
                         name="default_banner",
-                        description="Default Cowrie SSH banner detected",
+                        description=(
+                            "Default Kippo SSH banner detected"
+                            if is_kippo
+                            else "Default Cowrie SSH banner detected"
+                        ),
                         severity=Confidence.HIGH,
                         details=f"Banner: {banner}",
                     )
                 )
+                if is_kippo:
+                    result.honeypot_type = "kippo"
                 return
 
         # Check for outdated OpenSSH versions commonly used by honeypots
@@ -372,8 +438,45 @@ class SSHDetector(BaseDetector):
         except (struct.error, IndexError):
             return None
 
+    def _compute_hassh_server(self, kex_info: dict) -> Optional[str]:
+        """Compute the HASSHServer fingerprint from a parsed KEXINIT.
+
+        HASSHServer = md5("kex;enc_s2c;mac_s2c;comp_s2c") using the raw,
+        comma-separated algorithm lists exactly as the server advertised them
+        (Salesforce HASSH specification). Returns None if any field is missing.
+        """
+        required = (
+            "kex_algorithms",
+            "encryption_server_to_client",
+            "mac_server_to_client",
+            "compression_server_to_client",
+        )
+        if not all(field in kex_info for field in required):
+            return None
+
+        parts = [kex_info[field].decode("utf-8", errors="ignore") for field in required]
+        hassh_str = ";".join(parts)
+        return hashlib.md5(hassh_str.encode()).hexdigest()
+
     def _check_kex(self, kex_info: dict, result: DetectionResult) -> None:
         """Check KEX algorithms for Cowrie/Twisted signatures."""
+        # HASSHServer fingerprinting - identifies the SSH library/honeypot from
+        # its KEXINIT, surviving banner customisation. Only surfaced on a known
+        # honeypot match to avoid false positives on real servers.
+        hassh = self._compute_hassh_server(kex_info)
+        if hassh and hassh in HASSH_SERVER_FINGERPRINTS:
+            fp = HASSH_SERVER_FINGERPRINTS[hassh]
+            result.add_indicator(
+                Indicator(
+                    name="hassh_server_match",
+                    description=f"HASSHServer matches {fp['library']}",
+                    severity=Confidence.HIGH,
+                    details=f"HASSHServer {hassh} => {', '.join(fp['honeypots'])}",
+                )
+            )
+            if not result.honeypot_type and fp["honeypots"]:
+                result.honeypot_type = fp["honeypots"][0]
+
         if "encryption_client_to_server" not in kex_info:
             return
 

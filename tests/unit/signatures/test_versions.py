@@ -488,20 +488,20 @@ class TestHASSHFingerprints:
             assert "library" in info
             assert "honeypots" in info
 
+    # Ground-truth HASSHServer values captured from real honeypot containers
+    # (see tests/integration/test_ssh_detection.py).
     @pytest.mark.parametrize("fingerprint,library", [
-        ("ec7378c1a92f5a8dde7e8b7a1ddf33d1", "TwistedConch"),
-        ("b12d2871a1189eff20364cf5333619ee", "Paramiko"),
-        ("92f20d5d0ed6c3f6e64d3e3b8f0e4a1c", "Go crypto/ssh"),
+        ("92585b26f6634475d2d35bddbcdd1917", "Cowrie (default config)"),
+        ("41a85c886a9e9b845f0e69d68994492a", "sshesame (Go crypto/ssh)"),
     ])
     def test_hassh_fingerprint_libraries(self, fingerprint, library):
         """Test HASSH fingerprint to library mapping."""
         assert HASSH_FINGERPRINTS[fingerprint]["library"] == library
 
-    def test_twistedconch_honeypots(self):
-        """Test TwistedConch-based honeypots."""
-        fingerprint = "ec7378c1a92f5a8dde7e8b7a1ddf33d1"
+    def test_cowrie_hassh_honeypot(self):
+        """Captured Cowrie HASSHServer maps to the cowrie honeypot."""
+        fingerprint = "92585b26f6634475d2d35bddbcdd1917"
         assert "cowrie" in HASSH_FINGERPRINTS[fingerprint]["honeypots"]
-        assert "kippo" in HASSH_FINGERPRINTS[fingerprint]["honeypots"]
 
 
 class TestHoneydSignatures:

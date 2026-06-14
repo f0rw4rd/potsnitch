@@ -545,21 +545,21 @@ MTPOT_SIGNATURES = {
 # HASSH FINGERPRINTS (SSH Server Fingerprinting)
 # =============================================================================
 
+# HASSHServer fingerprints: md5("kex;enc_s2c;mac_s2c;comp_s2c") from the server's
+# SSH_MSG_KEXINIT. Values flagged "captured" were observed from real honeypot
+# containers (see tests/integration/test_ssh_detection.py); the authoritative copy
+# the detector consumes lives in detectors/ssh.py (HASSH_SERVER_FINGERPRINTS).
+# Library HASSH can shift between releases, so corroborate with banner/cipher.
 HASSH_FINGERPRINTS = {
-    # TwistedConch (Cowrie, Kippo, Kojoney)
-    "ec7378c1a92f5a8dde7e8b7a1ddf33d1": {
-        "library": "TwistedConch",
-        "honeypots": ["cowrie", "kippo", "kojoney"],
+    # Cowrie default config, emulated OpenSSH 9.2p1 (captured from cowrie/cowrie:latest)
+    "92585b26f6634475d2d35bddbcdd1917": {
+        "library": "Cowrie (default config)",
+        "honeypots": ["cowrie"],
     },
-    # Paramiko (Blacknet, generic Python SSH)
-    "b12d2871a1189eff20364cf5333619ee": {
-        "library": "Paramiko",
-        "honeypots": ["blacknet", "heralding"],
-    },
-    # Go crypto/ssh
-    "92f20d5d0ed6c3f6e64d3e3b8f0e4a1c": {
-        "library": "Go crypto/ssh",
-        "honeypots": ["sshesame", "fapro"],
+    # sshesame, Go crypto/ssh (captured from ghcr.io/jaksi/sshesame:latest)
+    "41a85c886a9e9b845f0e69d68994492a": {
+        "library": "sshesame (Go crypto/ssh)",
+        "honeypots": ["sshesame"],
     },
 }
 

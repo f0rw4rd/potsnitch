@@ -19,6 +19,7 @@ class ServiceEndpoints:
     # SSH Honeypots
     cowrie_ssh: tuple[str, int] = ("localhost", 2222)
     cowrie_telnet: tuple[str, int] = ("localhost", 2223)
+    sshesame: tuple[str, int] = ("localhost", 2225)
     endlessh: tuple[str, int] = ("localhost", 2224)
 
     # Database Honeypots

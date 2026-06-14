@@ -104,6 +104,94 @@ class TestCowrieDetection:
             pytest.skip("No Cowrie-specific detector available")
 
 
+    @SKIP_DOCKER
+    @pytest.mark.slow
+    def test_cowrie_hassh_server_match(
+        self, docker_services: ServiceEndpoints
+    ):
+        """Cowrie is fingerprinted by its HASSHServer, independent of the banner."""
+        from potsnitch.core.base import DetectionMode
+        from potsnitch.detectors.ssh import SSHDetector
+
+        host, port = docker_services.cowrie_ssh
+        assert is_port_open(host, port), f"Cowrie not available at {host}:{port}"
+
+        detector = SSHDetector(timeout=10.0, mode=DetectionMode.PASSIVE)
+        result = detector.detect_passive(host, port)
+
+        hassh_indicators = [
+            i for i in result.indicators if i.name == "hassh_server_match"
+        ]
+        assert hassh_indicators, "Cowrie should be caught by HASSHServer fingerprint"
+        assert "cowrie" in hassh_indicators[0].details.lower()
+
+
+@pytest.mark.docker
+@pytest.mark.integration
+class TestSSHesameDetection:
+    """Tests for SSHesame (Go crypto/ssh) honeypot detection."""
+
+    @SKIP_DOCKER
+    @pytest.mark.slow
+    def test_sshesame_detection(self, docker_services: ServiceEndpoints):
+        """End-to-end: the scanner flags SSHesame as a honeypot."""
+        host, port = docker_services.sshesame
+
+        assert is_port_open(host, port), f"SSHesame not available at {host}:{port}"
+
+        # Scope to the ssh module with a short timeout: SSHesame accepts all
+        # auth, so a FULL scan with every detector would run many post-auth
+        # probes. The passive banner/HASSH signals are conclusive on their own.
+        scanner = HoneypotScanner(timeout=3.0, max_workers=5, verbose=False)
+        report = scanner.scan(host, ports=[port], modules=["ssh"])
+
+        assert report.has_honeypot, "SSHesame should be detected as a honeypot"
+        ssh_detections = [d for d in report.detections if d.port == port]
+        assert ssh_detections, f"Should have detection on port {port}"
+
+        detection = ssh_detections[0]
+        assert detection.is_honeypot
+        assert detection.honeypot_type == "sshesame"
+
+    @SKIP_DOCKER
+    @pytest.mark.slow
+    def test_sshesame_banner(self, docker_services: ServiceEndpoints):
+        """SSHesame exposes its conclusive default banner 'SSH-2.0-sshesame'."""
+        from potsnitch.core.base import DetectionMode
+        from potsnitch.detectors.ssh import SSHDetector
+
+        host, port = docker_services.sshesame
+        assert is_port_open(host, port), f"SSHesame not available at {host}:{port}"
+
+        detector = SSHDetector(timeout=10.0, mode=DetectionMode.PASSIVE)
+        result = detector.detect_passive(host, port)
+
+        banner_indicators = [
+            i for i in result.indicators if i.name == "sshesame_banner"
+        ]
+        assert banner_indicators, "SSHesame default banner should be detected"
+        assert banner_indicators[0].severity == Confidence.DEFINITE
+
+    @SKIP_DOCKER
+    @pytest.mark.slow
+    def test_sshesame_hassh_server_match(self, docker_services: ServiceEndpoints):
+        """SSHesame's Go crypto/ssh HASSHServer is recognised."""
+        from potsnitch.core.base import DetectionMode
+        from potsnitch.detectors.ssh import SSHDetector
+
+        host, port = docker_services.sshesame
+        assert is_port_open(host, port), f"SSHesame not available at {host}:{port}"
+
+        detector = SSHDetector(timeout=10.0, mode=DetectionMode.PASSIVE)
+        result = detector.detect_passive(host, port)
+
+        hassh_indicators = [
+            i for i in result.indicators if i.name == "hassh_server_match"
+        ]
+        assert hassh_indicators, "SSHesame should match a known HASSHServer fingerprint"
+        assert "sshesame" in hassh_indicators[0].details.lower()
+
+
 @pytest.mark.docker
 @pytest.mark.integration
 class TestEndlesshDetection:
